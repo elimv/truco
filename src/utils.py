@@ -98,8 +98,12 @@ def draw_palitos(points: int) -> str:
 def calculate_falta_envido_points(team_scores, round_type):
     """Calcular puntos de Falta Envido según el tipo de ronda"""
     if round_type == "redondo":
-        # Puntos que le faltan al equipo con más puntos para ganar
+        # Si ambos equipos están bajo 15 puntos, falta envido gana la partida
         max_score = max(team_scores.values())
-        return 30 - max_score
+        if max_score < 15:
+            return 30  # Suficiente para ganar la partida
+        else:
+            # Puntos que le faltan al equipo con más puntos para ganar
+            return 30 - max_score
     else:  # pica-pica
         return 6

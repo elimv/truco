@@ -269,20 +269,19 @@ def main():
                     player1_points = 0
                     player2_points = 0
 
-                    game_winner = {
-                        truco_winner: truco_points_sub,
-                        envido_winner: (
-                            falta_envido_points
-                            if falta_envido_toggle
-                            else envido_points_sub
-                        ),
-                    }
+                    # Add truco points
+                    if truco_winner == player1["player_id"]:
+                        player1_points += truco_points_sub
+                    elif truco_winner == player2["player_id"]:
+                        player2_points += truco_points_sub
 
-                    for winner, points in game_winner.items():
-                        if winner == 1:
-                            player1_points += points
-                        elif winner == 2:
-                            player2_points += points
+                    # Add envido points
+                    if envido_winner != "No se cantó":
+                        envido_pts = falta_envido_points if falta_envido_toggle else envido_points_sub
+                        if envido_winner == player1["player_id"]:
+                            player1_points += envido_pts
+                        elif envido_winner == player2["player_id"]:
+                            player2_points += envido_pts
 
                     winning_player = (
                         player1 if player1_points > player2_points else player2
@@ -294,11 +293,10 @@ def main():
                             "player1": player1,
                             "player2": player2,
                             "winning_player": winning_player,
-                            "truco_points": (
-                                truco_points_sub if truco_winner != 0 else 0
-                            ),
+                            "truco_points": truco_points_sub if truco_winner else 0,
                             "envido_points": (
-                                envido_points_sub if envido_winner != 0 else 0
+                                (falta_envido_points if falta_envido_toggle else envido_points_sub)
+                                if envido_winner != "No se cantó" else 0
                             ),
                             "total_points": player1_points + player2_points,
                         }
@@ -320,11 +318,29 @@ def main():
                         )
 
                         for score in scores_data:
-                            if score["winning_player"] and score["total_points"] > 0:
+                            # Get the actual truco and envido winners from the sub-round data
+                            truco_winner_id = None
+                            envido_winner_id = None
+
+                            # Find truco winner
+                            truco_winner_key = f"truco_winner_{score['sub_round'] - 1}"
+                            if truco_winner_key in st.session_state:
+                                truco_winner_id = st.session_state[truco_winner_key]
+
+                            # Find envido winner
+                            envido_winner_key = f"envido_winner_{score['sub_round'] - 1}"
+                            if envido_winner_key in st.session_state:
+                                envido_winner = st.session_state[envido_winner_key]
+                                if envido_winner != "No se cantó":
+                                    envido_winner_id = envido_winner
+
+                            # Only add score if there are actual points to record
+                            if score["truco_points"] > 0 or score["envido_points"] > 0:
                                 game.add_pica_pica_score(
                                     round_id,
-                                    score["winning_player"]["player_id"],
+                                    truco_winner_id,
                                     score["truco_points"],
+                                    envido_winner_id,
                                     score["envido_points"],
                                     score["sub_round"],
                                 )

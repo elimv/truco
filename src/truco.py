@@ -254,16 +254,19 @@ class TrucoGame:
                 team_scores[envido_winner_id] += envido_points
 
         # Agregar puntajes de rondas pica-pica (puntajes de jugadores cuentan para equipos)
+        # Separate queries for truco and envido to avoid duplication
+
+        # Get truco points for teams
         cursor.execute(
             """
-            SELECT t.id as team_id, SUM(ps.envido_points + ps.truco_points) as total_points
+            SELECT t.id as team_id, SUM(ps.truco_points) as truco_points
             FROM pica_pica_scores ps
             JOIN rounds r ON ps.round_id = r.id
-            JOIN player_positions pp ON (ps.truco_winner_id = pp.player_id OR ps.envido_winner_id = pp.player_id) AND pp.match_id = r.match_id
+            JOIN player_positions pp ON ps.truco_winner_id = pp.player_id AND pp.match_id = r.match_id
             JOIN team_members tm ON pp.player_id = tm.player_id
             JOIN teams t ON tm.team_id = t.id
             JOIN match_teams mt ON t.id = mt.team_id AND mt.match_id = r.match_id
-            WHERE r.match_id = ? AND (ps.truco_winner_id IS NOT NULL OR ps.envido_winner_id IS NOT NULL)
+            WHERE r.match_id = ? AND ps.truco_winner_id IS NOT NULL AND ps.truco_points > 0
             GROUP BY t.id
         """,
             (match_id,),
@@ -272,7 +275,28 @@ class TrucoGame:
         for row in cursor.fetchall():
             team_id = row[0]
             if team_id in team_scores:
-                team_scores[team_id] += row[1]
+                team_scores[team_id] += row[1] or 0
+
+        # Get envido points for teams
+        cursor.execute(
+            """
+            SELECT t.id as team_id, SUM(ps.envido_points) as envido_points
+            FROM pica_pica_scores ps
+            JOIN rounds r ON ps.round_id = r.id
+            JOIN player_positions pp ON ps.envido_winner_id = pp.player_id AND pp.match_id = r.match_id
+            JOIN team_members tm ON pp.player_id = tm.player_id
+            JOIN teams t ON tm.team_id = t.id
+            JOIN match_teams mt ON t.id = mt.team_id AND mt.match_id = r.match_id
+            WHERE r.match_id = ? AND ps.envido_winner_id IS NOT NULL AND ps.envido_points > 0
+            GROUP BY t.id
+        """,
+            (match_id,),
+        )
+
+        for row in cursor.fetchall():
+            team_id = row[0]
+            if team_id in team_scores:
+                team_scores[team_id] += row[1] or 0
 
         return team_scores
 
@@ -298,9 +322,8 @@ class TrucoGame:
             if round_data["round_type"] == "redondo":
                 cursor.execute(
                     """
-                    SELECT rs.*, t.name as team_name
+                    SELECT rs.*
                     FROM redondo_scores rs
-                    LEFT JOIN teams t ON rs.truco_winner_team_id = t.id OR rs.envido_winner_team_id = t.id
                     WHERE rs.round_id = ?
                     ORDER BY rs.id
                 """,
@@ -309,9 +332,8 @@ class TrucoGame:
             else:  # pica-pica
                 cursor.execute(
                     """
-                    SELECT ps.*, u.nickname as player_name
+                    SELECT ps.*
                     FROM pica_pica_scores ps
-                    LEFT JOIN users u ON ps.truco_winner_id = u.id OR ps.envido_winner_id = u.id
                     WHERE ps.round_id = ?
                     ORDER BY ps.sub_round, ps.id
                 """,
@@ -424,6 +446,14 @@ class TrucoGame:
                 summary += ", ".join(parts) + "\n"
 
         else:  # pica-pica
+            # Get match info to determine player positioning
+            match_info = self.get_match_info(round_data["match_id"])
+            match_players = self.get_match_players(round_data["match_id"])
+
+            # Calculate dealer position and first player
+            dealer_position = round_data["dealer_position"]
+            first_player_pos = (dealer_position + 1) % match_info["players_count"]
+
             sub_rounds = {}
             for score in round_data["scores"]:
                 sub_round = score["sub_round"]
@@ -432,15 +462,66 @@ class TrucoGame:
                 sub_rounds[sub_round].append(score)
 
             for sub_round in sorted(sub_rounds.keys()):
-                summary += f"  Sub-ronda {sub_round}: "
-                scores_text = []
+                # Calculate which players faced each other in this sub-round
+                player1_pos = (first_player_pos + sub_round - 1) % 6
+                player2_pos = (player1_pos + 3) % 6
+
+                player1 = next(p for p in match_players if p["position"] == player1_pos)
+                player2 = next(p for p in match_players if p["position"] == player2_pos)
+
+                summary += f"  Sub-ronda {sub_round}: {player1['nickname']} vs {player2['nickname']}\n"
+
+                # Calculate points for each player in this sub-round
+                player1_points = 0
+                player2_points = 0
+
                 for score in sub_rounds[sub_round]:
-                    total = score["truco_points"] + score["envido_points"]
-                    if total > 0:
-                        scores_text.append(f"{score['player_name']} {total}")
-                if not scores_text:
-                    scores_text.append("Sin puntos")
-                summary += ", ".join(scores_text) + "\n"
+                    truco_points = score["truco_points"] or 0
+                    envido_points = score["envido_points"] or 0
+
+                    # Add truco points
+                    if score["truco_winner_id"] == player1["player_id"]:
+                        player1_points += truco_points
+                    elif score["truco_winner_id"] == player2["player_id"]:
+                        player2_points += truco_points
+
+                    # Add envido points
+                    if score["envido_winner_id"] == player1["player_id"]:
+                        player1_points += envido_points
+                    elif score["envido_winner_id"] == player2["player_id"]:
+                        player2_points += envido_points
+
+                # Display results with breakdown
+                if player1_points > 0 or player2_points > 0:
+                    # Create detailed breakdown
+                    for score in sub_rounds[sub_round]:
+                        truco_points = score["truco_points"] or 0
+                        envido_points = score["envido_points"] or 0
+
+                        breakdown_parts = []
+                        if truco_points > 0:
+                            winner_id = score["truco_winner_id"]
+                            winner_name = player1['nickname'] if winner_id == player1["player_id"] else player2['nickname']
+                            breakdown_parts.append(f"Truco: {winner_name} +{truco_points}")
+
+                        if envido_points > 0:
+                            winner_id = score["envido_winner_id"]
+                            winner_name = player1['nickname'] if winner_id == player1["player_id"] else player2['nickname']
+                            breakdown_parts.append(f"Envido: {winner_name} +{envido_points}")
+
+                        if breakdown_parts:
+                            summary += f"    {' | '.join(breakdown_parts)}\n"
+
+                    # Show final totals
+                    if player1_points > player2_points:
+                        summary += f"    🏆 Total: {player1['nickname']} {player1_points} - {player2['nickname']} {player2_points}\n"
+                    elif player2_points > player1_points:
+                        summary += f"    🏆 Total: {player2['nickname']} {player2_points} - {player1['nickname']} {player1_points}\n"
+                    else:
+                        summary += f"    🤝 Empate: {player1_points} - {player2_points}\n"
+                else:
+                    summary += "    Sin puntos anotados\n"
+                summary += "\n"
 
         return summary.strip()
 
