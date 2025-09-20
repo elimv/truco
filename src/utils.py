@@ -1,93 +1,62 @@
 def draw_palitos(points: int) -> str:
-    """Dibujar representación tradicional de palitos de los puntos usando CSS"""
+    """Dibujar representación tradicional de palitos de los puntos usando SVG"""
     if points == 0:
         return ""
 
-    # CSS styles for matchstick representation
-    css_styles = """
-    <style>
-    .matchstick-container {
-        display: inline-block;
-        margin: 4px;
-        vertical-align: top;
+    # Predefined SVG elements for each stick count (traditional tally marks)
+    stick_svgs = {
+        1: '''<svg width="60" height="15" viewBox="0 0 60 15" style="display: inline-block; margin: 2px;">
+            <line x1="10" y1="7" x2="50" y2="7" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+        </svg>''',
+
+        2: '''<svg width="60" height="25" viewBox="0 0 60 25" style="display: inline-block; margin: 2px;">
+            <line x1="10" y1="6" x2="50" y2="6" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="19" x2="50" y2="19" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+        </svg>''',
+
+        3: '''<svg width="60" height="35" viewBox="0 0 60 35" style="display: inline-block; margin: 2px;">
+            <line x1="10" y1="6" x2="50" y2="6" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="17" x2="50" y2="17" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="28" x2="50" y2="28" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+        </svg>''',
+
+        4: '''<svg width="60" height="45" viewBox="0 0 60 45" style="display: inline-block; margin: 2px;">
+            <line x1="10" y1="6" x2="50" y2="6" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="16" x2="50" y2="16" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="26" x2="50" y2="26" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="36" x2="50" y2="36" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+        </svg>''',
+
+        5: '''<svg width="60" height="45" viewBox="0 0 60 45" style="display: inline-block; margin: 2px;">
+            <line x1="10" y1="6" x2="50" y2="6" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="16" x2="50" y2="16" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="26" x2="50" y2="26" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="36" x2="50" y2="36" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+            <line x1="5" y1="39" x2="55" y2="3" stroke="#FFD700" stroke-width="3" stroke-linecap="round"/>
+        </svg>'''
     }
-    .matchstick-group {
-        display: block;
-        margin: 8px 2px;
-        vertical-align: top;
-        position: relative;
-    }
-    .matchstick-square {
-        width: 40px;
-        height: 40px;
-        border: 3px solid #FFD700;
-        position: relative;
-        display: inline-block;
-        margin: 1px;
-    }
-    .matchstick-square.diagonal::before {
-        content: '';
-        position: absolute;
-        background: #FFD700;
-        width: 3px;
-        height: 56px;
-        top: -8px;
-        left: 18px;
-        transform: rotate(45deg);
-    }
-    .matchstick-horizontal {
-        width: 40px;
-        height: 3px;
-        background: #FFD700;
-        display: inline-block;
-        margin: 1px;
-        position: relative;
-    }
-    .divider-line {
-        width: 120%;
-        height: 2px;
-        background: #FFFFFF;
-        margin: 15px -10%;
-        position: relative;
-    }
-    </style>
-    """
 
     # Generate matchstick representation
-    result = css_styles + '<div class="matchstick-container">'
+    result = '<div style="display: inline-block; margin: 4px; vertical-align: top;">'
 
-    # Each group of 5 represents 5 points (square with one diagonal)
+    # Each group of 5 represents 5 points
     groups_of_5 = points // 5
     remainder = points % 5
 
-    # Draw complete groups of 5 (square with one diagonal stick)
+    # Draw complete groups of 5
     for i in range(groups_of_5):
-        result += '<div class="matchstick-group">'
-        result += '<div class="matchstick-square diagonal"></div>'
+        result += '<div style="display: block; margin: 4px 0;">'
+        result += stick_svgs[5]
         result += "</div>"
 
         # Add divider after every 3 groups (15 points)
         if (i + 1) % 3 == 0:
-            result += '<div class="divider-line"></div>'
+            result += '<div style="width: 100%; height: 2px; background: #FFFFFF; margin: 8px 0;"></div>'
 
     # Handle remainder (1-4 sticks)
     if remainder > 0:
-        result += '<div class="matchstick-group">'
-        if remainder == 1:
-            result += '<div class="matchstick-horizontal"></div>'
-        elif remainder == 2:
-            result += (
-                '<div class="matchstick-horizontal"></div>'
-                '<div class="matchstick-horizontal"></div>'
-            )
-        elif remainder == 3:
-            result += (
-                '<div class="matchstick-horizontal"></div>'
-                '<div class="matchstick-horizontal"></div>'
-                '<div class="matchstick-horizontal"></div>'
-            )
-        elif remainder == 4:
-            result += '<div class="matchstick-square"></div>'
+        result += '<div style="display: block; margin: 4px 0;">'
+        result += stick_svgs[remainder]
         result += "</div>"
 
     result += "</div>"
