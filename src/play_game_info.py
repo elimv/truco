@@ -112,4 +112,5 @@ def check_match_finished(game, match_id, team_scores):
             )
             game.conn.commit()
             st.rerun()
-        return
+        return True
+    return False

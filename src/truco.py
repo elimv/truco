@@ -131,6 +131,10 @@ class TrucoGame:
 
     def add_round(self, match_id: int, round_type: str, dealer_position: int) -> int:
         """Agregar una nueva ronda"""
+        # Check if the match is already finished
+        if self.is_match_finished(match_id):
+            raise ValueError("No se pueden agregar rondas a una partida terminada")
+
         cursor = self.conn.cursor()
 
         # Obtener número de ronda actual
@@ -161,10 +165,64 @@ class TrucoGame:
         sub_round: int = 1,
     ):
         """Agregar puntaje para una ronda pica-pica"""
+        # Get match_id from round_id to check current scores
         cursor = self.conn.cursor()
+        cursor.execute("SELECT match_id FROM rounds WHERE id = ?", (round_id,))
+        match_id = cursor.fetchone()[0]
+
+        # Get current team scores before adding new points
+        current_scores = self.get_team_scores(match_id)
+
+        # Check if adding these points would exceed 30 for any team
+        if truco_winner_id:
+            # Find which team this player belongs to
+            cursor.execute("""
+                SELECT t.id
+                FROM teams t
+                JOIN team_members tm ON t.id = tm.team_id
+                JOIN match_teams mt ON t.id = mt.team_id
+                WHERE tm.player_id = ? AND mt.match_id = ?
+            """, (truco_winner_id, match_id))
+            team_result = cursor.fetchone()
+            if team_result:
+                team_id = team_result[0]
+                current_team_score = current_scores.get(team_id, 0)
+                if current_team_score + truco_points > 30:
+                    truco_points = max(0, 30 - current_team_score)
+
+        if envido_winner_id:
+            # Find which team this player belongs to
+            cursor.execute("""
+                SELECT t.id
+                FROM teams t
+                JOIN team_members tm ON t.id = tm.team_id
+                JOIN match_teams mt ON t.id = mt.team_id
+                WHERE tm.player_id = ? AND mt.match_id = ?
+            """, (envido_winner_id, match_id))
+            team_result = cursor.fetchone()
+            if team_result:
+                team_id = team_result[0]
+                current_team_score = current_scores.get(team_id, 0)
+                # If truco winner is from same team, account for already added truco points
+                adjusted_current_score = current_team_score
+                if truco_winner_id:
+                    cursor.execute("""
+                        SELECT t.id
+                        FROM teams t
+                        JOIN team_members tm ON t.id = tm.team_id
+                        JOIN match_teams mt ON t.id = mt.team_id
+                        WHERE tm.player_id = ? AND mt.match_id = ?
+                    """, (truco_winner_id, match_id))
+                    truco_team_result = cursor.fetchone()
+                    if truco_team_result and truco_team_result[0] == team_id:
+                        adjusted_current_score += truco_points
+
+                if adjusted_current_score + envido_points > 30:
+                    envido_points = max(0, 30 - adjusted_current_score)
+
         cursor.execute(
             """
-            INSERT INTO pica_pica_scores 
+            INSERT INTO pica_pica_scores
             (round_id, sub_round, truco_winner_id, truco_points, envido_winner_id, envido_points)
             VALUES (?, ?, ?, ?, ?, ?)
         """,
@@ -188,7 +246,28 @@ class TrucoGame:
         envido_points: int,
     ):
         """Agregar puntajes para una ronda redonda"""
+        # Get match_id from round_id to check current scores
         cursor = self.conn.cursor()
+        cursor.execute("SELECT match_id FROM rounds WHERE id = ?", (round_id,))
+        match_id = cursor.fetchone()[0]
+
+        # Get current team scores before adding new points
+        current_scores = self.get_team_scores(match_id)
+
+        # Check if adding these points would exceed 30 for any team
+        if truco_winner_team_id:
+            current_team_score = current_scores.get(truco_winner_team_id, 0)
+            if current_team_score + truco_points > 30:
+                truco_points = max(0, 30 - current_team_score)
+
+        if envido_winner_team_id:
+            current_team_score = current_scores.get(envido_winner_team_id, 0)
+            # If truco winner is the same team, account for already added truco points
+            if truco_winner_team_id == envido_winner_team_id:
+                current_team_score += truco_points
+
+            if current_team_score + envido_points > 30:
+                envido_points = max(0, 30 - current_team_score)
 
         cursor.execute(
             """
@@ -663,3 +742,35 @@ class TrucoGame:
             }
             teams.append(team)
         return teams
+
+    def delete_match(self, match_id: int):
+        """Eliminar una partida y todos sus datos relacionados"""
+        cursor = self.conn.cursor()
+
+        # Delete in reverse order of dependencies to avoid foreign key constraints
+
+        # 1. Delete pica_pica_scores (references rounds)
+        cursor.execute("""
+            DELETE FROM pica_pica_scores
+            WHERE round_id IN (SELECT id FROM rounds WHERE match_id = ?)
+        """, (match_id,))
+
+        # 2. Delete redondo_scores (references rounds)
+        cursor.execute("""
+            DELETE FROM redondo_scores
+            WHERE round_id IN (SELECT id FROM rounds WHERE match_id = ?)
+        """, (match_id,))
+
+        # 3. Delete rounds (references matches)
+        cursor.execute("DELETE FROM rounds WHERE match_id = ?", (match_id,))
+
+        # 4. Delete player_positions (references matches)
+        cursor.execute("DELETE FROM player_positions WHERE match_id = ?", (match_id,))
+
+        # 5. Delete match_teams (references matches)
+        cursor.execute("DELETE FROM match_teams WHERE match_id = ?", (match_id,))
+
+        # 6. Finally delete the match itself
+        cursor.execute("DELETE FROM matches WHERE id = ?", (match_id,))
+
+        self.conn.commit()

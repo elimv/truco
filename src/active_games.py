@@ -61,5 +61,46 @@ def games_management(game: TrucoGame):
                     player_names = [p["nickname"] for p in players]
                     players_text = ", ".join(player_names)
                     st.write(f"**Jugadores:** {players_text}")
+
+                # Add delete button
+                st.divider()
+                col_delete1, col_delete2, col_delete3 = st.columns([1, 1, 1])
+                with col_delete2:
+                    if st.button(
+                        "🗑️ Eliminar Partida",
+                        key=f"delete_match_{match['id']}",
+                        type="secondary",
+                        use_container_width=True
+                    ):
+                        # Show confirmation dialog
+                        if f"confirm_delete_{match['id']}" not in st.session_state:
+                            st.session_state[f"confirm_delete_{match['id']}"] = True
+                            st.rerun()
+
+                # Show confirmation if button was clicked
+                if st.session_state.get(f"confirm_delete_{match['id']}", False):
+                    st.warning("⚠️ **¿Estás seguro que quieres eliminar esta partida?**")
+                    st.write("Esta acción no se puede deshacer. Se eliminarán todos los datos de la partida incluyendo rondas y puntajes.")
+
+                    col_confirm1, col_confirm2, col_confirm3 = st.columns([1, 1, 1])
+
+                    with col_confirm1:
+                        if st.button("✅ Sí, eliminar", key=f"confirm_yes_{match['id']}", type="primary"):
+                            try:
+                                game.delete_match(match["id"])
+                                st.success(f"Partida '{match['name']}' eliminada exitosamente")
+                                # Clear confirmation state
+                                if f"confirm_delete_{match['id']}" in st.session_state:
+                                    del st.session_state[f"confirm_delete_{match['id']}"]
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al eliminar la partida: {str(e)}")
+
+                    with col_confirm3:
+                        if st.button("❌ Cancelar", key=f"confirm_no_{match['id']}"):
+                            # Clear confirmation state
+                            if f"confirm_delete_{match['id']}" in st.session_state:
+                                del st.session_state[f"confirm_delete_{match['id']}"]
+                            st.rerun()
     else:
         st.info("No se encontraron partidas activas.")

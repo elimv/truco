@@ -56,13 +56,22 @@ def main():
 
         team1_id = teams_with_names[0]["id"]
         team2_id = teams_with_names[1]["id"]
+
+        # Check if it's a 1v1 match (each team has only 1 player)
+        is_1v1_match = (len(teams_with_names[0]["player_names"]) == 1 and
+                       len(teams_with_names[1]["player_names"]) == 1)
+
         show_match_points(team_scores, teams_with_names)
 
         match_info = game.get_match_info(match_id)
         round_type, current_dealer_name, current_dealer_position = get_round_info(
             game, match_id, players, match_info
         )
-        check_match_finished(game, match_id, team_scores)
+        is_finished = check_match_finished(game, match_id, team_scores)
+
+        # Don't show round forms if game is finished
+        if is_finished:
+            st.stop()
 
         if round_type == "redondo":
             st.info(f"🎯 **Ronda Redonda** - Pie: {current_dealer_name}")
@@ -81,7 +90,8 @@ def main():
                         "Ganador del Truco:",
                         options=[team1_id, team2_id],
                         format_func=lambda x: next(
-                            t["name"] for t in teams_with_names if t["id"] == x
+                            (t["player_names"][0] if is_1v1_match else t["name"])
+                            for t in teams_with_names if t["id"] == x
                         ),
                         index=None,
                         horizontal=True,
@@ -110,7 +120,8 @@ def main():
                         "Ganador del Envido:",
                         options=["No se cantó", team1_id, team2_id],
                         format_func=lambda x: (
-                            next(t["name"] for t in teams_with_names if t["id"] == x)
+                            next((t["player_names"][0] if is_1v1_match else t["name"])
+                                 for t in teams_with_names if t["id"] == x)
                             if x != "No se cantó"
                             else "No se cantó"
                         ),
@@ -137,27 +148,30 @@ def main():
                     if not truco_team_toggle:
                         st.error("Al menos un equipo debe ganar Truco o Envido")
                     else:
-                        round_id = game.add_round(
-                            match_id, "redondo", current_dealer_position
-                        )
+                        try:
+                            round_id = game.add_round(
+                                match_id, "redondo", current_dealer_position
+                            )
 
-                        # Determinar equipos ganadores
-                        envido_winner = (
-                            envido_team_toggle
-                            if envido_team_toggle != "No se cantó"
-                            else None
-                        )
+                            # Determinar equipos ganadores
+                            envido_winner = (
+                                envido_team_toggle
+                                if envido_team_toggle != "No se cantó"
+                                else None
+                            )
 
-                        game.add_redondo_score(
-                            round_id,
-                            truco_team_toggle,
-                            truco_points,
-                            envido_winner,
-                            final_envido_points,
-                        )
+                            game.add_redondo_score(
+                                round_id,
+                                truco_team_toggle,
+                                truco_points,
+                                envido_winner,
+                                final_envido_points,
+                            )
 
-                        st.success("¡Ronda agregada!")
-                        st.rerun()
+                            st.success("¡Ronda agregada!")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(str(e))
 
         else:  # pica-pica
             st.info(f"🔥 **Ronda Pica-Pica** - Pie: {current_dealer_name}")
@@ -195,10 +209,15 @@ def main():
                             player2_team = team["name"]
 
                     # Mostrar enfrentamiento
-                    st.write(
-                        f"**{player1['nickname']} ({player1_team}) vs "
-                        f"{player2['nickname']} ({player2_team})**"
-                    )
+                    if is_1v1_match:
+                        st.write(
+                            f"**{player1['nickname']} vs {player2['nickname']}**"
+                        )
+                    else:
+                        st.write(
+                            f"**{player1['nickname']} ({player1_team}) vs "
+                            f"{player2['nickname']} ({player2_team})**"
+                        )
 
                     col_truco, col_envido = st.columns(2)
 
@@ -313,40 +332,43 @@ def main():
                             valid = False
 
                     if valid:
-                        round_id = game.add_round(
-                            match_id, "pica-pica", current_dealer_position
-                        )
+                        try:
+                            round_id = game.add_round(
+                                match_id, "pica-pica", current_dealer_position
+                            )
 
-                        for score in scores_data:
-                            # Get the actual truco and envido winners from the sub-round data
-                            truco_winner_id = None
-                            envido_winner_id = None
+                            for score in scores_data:
+                                # Get the actual truco and envido winners from the sub-round data
+                                truco_winner_id = None
+                                envido_winner_id = None
 
-                            # Find truco winner
-                            truco_winner_key = f"truco_winner_{score['sub_round'] - 1}"
-                            if truco_winner_key in st.session_state:
-                                truco_winner_id = st.session_state[truco_winner_key]
+                                # Find truco winner
+                                truco_winner_key = f"truco_winner_{score['sub_round'] - 1}"
+                                if truco_winner_key in st.session_state:
+                                    truco_winner_id = st.session_state[truco_winner_key]
 
-                            # Find envido winner
-                            envido_winner_key = f"envido_winner_{score['sub_round'] - 1}"
-                            if envido_winner_key in st.session_state:
-                                envido_winner = st.session_state[envido_winner_key]
-                                if envido_winner != "No se cantó":
-                                    envido_winner_id = envido_winner
+                                # Find envido winner
+                                envido_winner_key = f"envido_winner_{score['sub_round'] - 1}"
+                                if envido_winner_key in st.session_state:
+                                    envido_winner = st.session_state[envido_winner_key]
+                                    if envido_winner != "No se cantó":
+                                        envido_winner_id = envido_winner
 
-                            # Only add score if there are actual points to record
-                            if score["truco_points"] > 0 or score["envido_points"] > 0:
-                                game.add_pica_pica_score(
-                                    round_id,
-                                    truco_winner_id,
-                                    score["truco_points"],
-                                    envido_winner_id,
-                                    score["envido_points"],
-                                    score["sub_round"],
-                                )
+                                # Only add score if there are actual points to record
+                                if score["truco_points"] > 0 or score["envido_points"] > 0:
+                                    game.add_pica_pica_score(
+                                        round_id,
+                                        truco_winner_id,
+                                        score["truco_points"],
+                                        envido_winner_id,
+                                        score["envido_points"],
+                                        score["sub_round"],
+                                    )
 
-                        st.success("¡Ronda pica-pica agregada!")
-                        st.rerun()
+                            st.success("¡Ronda pica-pica agregada!")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(str(e))
 
         round_history(game, match_id, players, team_scores)
 
